@@ -117,7 +117,7 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 
   //lcd.fillScreen(TFT_WHITE);
 #if (LV_COLOR_16_SWAP != 0)
- lcd.pushImageDMA(area->x1, area->y1, w, h,(lgfx::rgb565_t*)&color_p->full);
+  lcd.pushImageDMA(area->x1, area->y1, w, h,(lgfx::rgb565_t*)&color_p->full);
 #else
   lcd.pushImageDMA(area->x1, area->y1, w, h,(lgfx::rgb565_t*)&color_p->full);//
 #endif
@@ -155,8 +155,7 @@ void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data)
   delay(15);
 }
 
-void setup()
-{
+void setup(){
   
   Serial.begin(9600);
   // Serial.println("LVGL Widgets Demo");
@@ -205,15 +204,45 @@ void setup()
 
   lv_timer_handler();
 
+
   Serial.println( "Setup done" );
 
 }
 
+lv_obj_t* startScreen;
+lv_obj_t* startBtn;
 int gridSize = 40;
 int snakeLength = 3;
 int snakeSampleLoc[][2] = {{5, 6}, {6, 6}, {7, 6}};
 int numFruit = 1;
 int sampleFruitLoc[][2] = {{7, 3}};
+bool snakeAlive = false;
+
+void drawStartScreen() {
+    // Create a new fullscreen container
+    startScreen = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(startScreen, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_bg_color(startScreen, lv_color_hex(0x0000FF), LV_PART_MAIN);  // blue
+    lv_obj_set_style_bg_opa(startScreen, LV_OPA_COVER, LV_PART_MAIN);
+
+    // Title label
+    lv_obj_t* title = lv_label_create(startScreen);
+    lv_label_set_text(title, "SPEECH SNAKE");
+    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);   // white text
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 40);  // center, offset down
+
+    // Start button
+    startBtn = lv_btn_create(startScreen);
+    lv_obj_set_size(startBtn, 150, 50);
+    lv_obj_align(startBtn, LV_ALIGN_CENTER, 0, 40);
+
+
+    // Button text
+    lv_obj_t* btnLabel = lv_label_create(startBtn);
+    lv_label_set_text(btnLabel, "START GAME");
+    lv_obj_center(btnLabel);
+}
 
 void drawBoard(){
   lcd.fillScreen(TFT_GREENYELLOW);
@@ -266,8 +295,15 @@ void drawFruit(int fruitLoc[][2]) {
 
 void loop()
 {
-  drawBoard();
-  drawSnake(snakeSampleLoc);
-  drawFruit(sampleFruitLoc);
+  if (!snakeAlive){
+    lv_obj_clean(lv_scr_act());
+    drawStartScreen();
+  }
+  else{
+    drawBoard();
+    drawSnake(snakeSampleLoc);
+    drawFruit(sampleFruitLoc);
+  }
+  lv_timer_handler();
   delay(1000);
 }
