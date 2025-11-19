@@ -209,20 +209,65 @@ void setup()
 
 }
 
+int gridSize = 40;
+int snakeLength = 3;
+int snakeSampleLoc[][2] = {{5, 6}, {6, 6}, {7, 6}};
+int numFruit = 1;
+int sampleFruitLoc[][2] = {{7, 3}};
+
+void drawBoard(){
+  lcd.fillScreen(TFT_GREENYELLOW);
+  for(int i = 1; i <= 24; i++){
+    for(int j = 1; j <= 12; j++){
+      if (i%2 == 0){
+        if(j%2 != 0){
+          lcd.fillRect(gridSize*i - gridSize, gridSize*j-gridSize, gridSize, gridSize, TFT_GREEN);
+        }
+      }
+      else{
+        if(j%2 == 0){
+          lcd.fillRect(gridSize*i - gridSize, gridSize*j-gridSize, gridSize, gridSize, TFT_GREEN);
+        }
+      }
+    }
+  }
+}
+
+void drawSnake(int snakeLoc[][2]) {
+  for (int i = 0; i < snakeLength; i++) {
+    int x = snakeLoc[i][0];
+    int y = snakeLoc[i][1];
+
+    int px = x * gridSize;
+    int py = y * gridSize;
+
+    lcd.fillRect(px, py, gridSize, gridSize, TFT_SKYBLUE);
+  }
+}
+
+void drawFruit(int fruitLoc[][2]) {
+  for (int i = 0; i < numFruit; i++) {
+    int gx = fruitLoc[i][0];   // grid X
+    int gy = fruitLoc[i][1];   // grid Y
+
+    int px = gx * gridSize;
+    int py = gy * gridSize;
+
+    int cx = px + gridSize / 2;
+    int cy = py + gridSize / 2;
+
+    int radius = gridSize * 0.3;
+    lcd.fillCircle(cx, cy, radius, TFT_RED);
+
+    int stemLen = gridSize * 0.19;
+    lcd.drawLine(cx, cy - radius, cx, cy - radius - stemLen, TFT_BROWN);
+  }
+}
+
 void loop()
 {
-  char DHT_buffer[6];
-  int a = (int)dht20.getTemperature();
-  int b = (int)dht20.getHumidity();
-  snprintf(DHT_buffer, sizeof(DHT_buffer), "%d", a);
-  lv_label_set_text(ui_Label1, DHT_buffer);
-  snprintf(DHT_buffer, sizeof(DHT_buffer), "%d", b);
-  lv_label_set_text(ui_Label2, DHT_buffer);
-
-  if(led == 1)
-  digitalWrite(38, HIGH);
-  if(led == 0)
-  digitalWrite(38, LOW);
-  lv_timer_handler(); /* let the GUI do its work */
-  delay( 10 );
+  drawBoard();
+  drawSnake(snakeSampleLoc);
+  drawFruit(sampleFruitLoc);
+  delay(1000);
 }
