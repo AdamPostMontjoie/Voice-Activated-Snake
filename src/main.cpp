@@ -7,6 +7,7 @@
 #include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
 #include "ui.h"
+#include "snake_logic.h"
 
 #define TFT_BL 2
 
@@ -117,7 +118,7 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 
   //lcd.fillScreen(TFT_WHITE);
 #if (LV_COLOR_16_SWAP != 0)
- lcd.pushImageDMA(area->x1, area->y1, w, h,(lgfx::rgb565_t*)&color_p->full);
+  lcd.pushImageDMA(area->x1, area->y1, w, h,(lgfx::rgb565_t*)&color_p->full);
 #else
   lcd.pushImageDMA(area->x1, area->y1, w, h,(lgfx::rgb565_t*)&color_p->full);//
 #endif
@@ -126,39 +127,88 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 
 }
 
-void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data)
-{
-  if (touch_has_signal())
-  {
-    if (touch_touched())
-    {
-      data->state = LV_INDEV_STATE_PR;
 
-      /*Set the coordinates*/
-      data->point.x = touch_last_x;
-      data->point.y = touch_last_y;
-      Serial.print( "Data x :" );
-      Serial.println( touch_last_x );
 
-      Serial.print( "Data y :" );
-      Serial.println( touch_last_y );
-    }
-    else if (touch_released())
-    {
-      data->state = LV_INDEV_STATE_REL;
-    }
-  }
-  else
-  {
-    data->state = LV_INDEV_STATE_REL;
-  }
-  delay(15);
+lv_obj_t* startScreen;
+lv_obj_t* startBtn;
+int gridSize = 40;
+
+void drawStartScreen() {
+    // Create a new fullscreen container
+    startScreen = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(startScreen, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_bg_color(startScreen, lv_color_hex(0x0000FF), LV_PART_MAIN);  // blue
+    lv_obj_set_style_bg_opa(startScreen, LV_OPA_COVER, LV_PART_MAIN);
+
+    // Title label
+    lv_obj_t* title = lv_label_create(startScreen);
+    lv_label_set_text(title, "SPEECH SNAKE");
+    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);   // white text
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 40);  // center, offset down
+
+    // Start button
+    startBtn = lv_btn_create(startScreen);
+    lv_obj_set_size(startBtn, 150, 50);
+    lv_obj_align(startBtn, LV_ALIGN_CENTER, 0, 40);
+
+
+    // Button text
+    lv_obj_t* btnLabel = lv_label_create(startBtn);
+    lv_label_set_text(btnLabel, "START GAME");
+    lv_obj_center(btnLabel);
 }
 
-void setup()
-{
+void drawBoard(){
+  lcd.fillScreen(TFT_GREENYELLOW);
+  for(int i = 1; i <= 24; i++){
+    for(int j = 1; j <= 12; j++){
+      if (i%2 == 0){
+        if(j%2 != 0){
+          lcd.fillRect(gridSize*i - gridSize, gridSize*j-gridSize, gridSize, gridSize, TFT_GREEN);
+        }
+      }
+      else{
+        if(j%2 == 0){
+          lcd.fillRect(gridSize*i - gridSize, gridSize*j-gridSize, gridSize, gridSize, TFT_GREEN);
+        }
+      }
+    }
+  }
+}
+
+void drawSnake(Point snakeLoc[]) {
+  for (int i = 0; i < snakeLength; i++) {
+    int x = snakeLoc[i].x;
+    int y = snakeLoc[i].y;
+
+    int px = x * gridSize;
+    int py = y * gridSize;
+
+    lcd.fillRect(px, py, gridSize, gridSize, TFT_SKYBLUE);
+  }
+}
+
+void drawFruit(Point fruitLoc[]) {
+    int gx = fruitLoc[0].x;   // grid X
+    int gy = fruitLoc[0].y;   // grid Y
+
+    int px = gx * gridSize;
+    int py = gy * gridSize;
+
+    int cx = px + gridSize / 2;
+    int cy = py + gridSize / 2;
+
+    int radius = gridSize * 0.3;
+    lcd.fillCircle(cx, cy, radius, TFT_RED);
+
+    int stemLen = gridSize * 0.19;
+    lcd.drawLine(cx, cy - radius, cx, cy - radius - stemLen, TFT_BROWN);
+}
+
+void setup(){
   
-  Serial.begin(9600);
+  Serial.begin(115200);
   // Serial.println("LVGL Widgets Demo");
   Wire.begin(19, 20);
   dht20.begin();
@@ -191,38 +241,37 @@ void setup()
   disp_drv.draw_buf = &draw_buf;
   lv_disp_drv_register(&disp_drv);
 
-  /* Initialize the (dummy) input device driver */
-  static lv_indev_drv_t indev_drv;
-  lv_indev_drv_init(&indev_drv);
-  indev_drv.type = LV_INDEV_TYPE_POINTER;
-  indev_drv.read_cb = my_touchpad_read;
-  lv_indev_drv_register(&indev_drv);
 #ifdef TFT_BL
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
 #endif
-  ui_init();//开机UI界面
+  initGame();
 
-  lv_timer_handler();
+
+  updateSnake();
+  drawBoard();
+  drawSnake(snake);
+  drawFruit(&fruit);
 
   Serial.println( "Setup done" );
 
 }
 
+unsigned long prev = 0;
 void loop()
 {
-  char DHT_buffer[6];
-  int a = (int)dht20.getTemperature();
-  int b = (int)dht20.getHumidity();
-  snprintf(DHT_buffer, sizeof(DHT_buffer), "%d", a);
-  lv_label_set_text(ui_Label1, DHT_buffer);
-  snprintf(DHT_buffer, sizeof(DHT_buffer), "%d", b);
-  lv_label_set_text(ui_Label2, DHT_buffer);
-
-  if(led == 1)
-  digitalWrite(38, HIGH);
-  if(led == 0)
-  digitalWrite(38, LOW);
-  lv_timer_handler(); /* let the GUI do its work */
-  delay( 10 );
+  if (!snakeAlive){
+    lv_timer_handler();
+    lv_obj_clean(lv_scr_act());
+    drawStartScreen();
+  }
+  else{
+    if (millis() - prev > 1000) {
+      prev = millis();
+      updateSnake();
+      drawBoard();
+      drawSnake(snake);
+      drawFruit(&fruit);
+    }
+  }
 }
