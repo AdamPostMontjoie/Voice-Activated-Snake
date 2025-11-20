@@ -7,6 +7,7 @@
 #include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
 #include "ui.h"
+#include "snake_logic.h"
 
 #define TFT_BL 2
 
@@ -126,97 +127,11 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 
 }
 
-void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data)
-{
-  if (touch_has_signal())
-  {
-    if (touch_touched())
-    {
-      data->state = LV_INDEV_STATE_PR;
 
-      /*Set the coordinates*/
-      data->point.x = touch_last_x;
-      data->point.y = touch_last_y;
-      Serial.print( "Data x :" );
-      Serial.println( touch_last_x );
-
-      Serial.print( "Data y :" );
-      Serial.println( touch_last_y );
-    }
-    else if (touch_released())
-    {
-      data->state = LV_INDEV_STATE_REL;
-    }
-  }
-  else
-  {
-    data->state = LV_INDEV_STATE_REL;
-  }
-  delay(15);
-}
-
-void setup(){
-  
-  Serial.begin(9600);
-  // Serial.println("LVGL Widgets Demo");
-  Wire.begin(19, 20);
-  dht20.begin();
-  //IO口引脚
-  pinMode(38, OUTPUT);
-  digitalWrite(38, LOW);
-  
-  // Init Display
-  lcd.begin();
-  lcd.fillScreen(TFT_BLACK);
-  // lcd.setTextSize(2);
-  delay(200);
-
-  lv_init();
-
-  delay(100);
-  touch_init();
-
-  screenWidth = lcd.width();
-  screenHeight = lcd.height();
-
-  lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, screenWidth * screenHeight / 10);
-  //  lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, 480 * 272 / 10);
-  /* Initialize the display */
-  lv_disp_drv_init(&disp_drv);
-  /* Change the following line to your display resolution */
-  disp_drv.hor_res = screenWidth;
-  disp_drv.ver_res = screenHeight;
-  disp_drv.flush_cb = my_disp_flush;
-  disp_drv.draw_buf = &draw_buf;
-  lv_disp_drv_register(&disp_drv);
-
-  /* Initialize the (dummy) input device driver */
-  static lv_indev_drv_t indev_drv;
-  lv_indev_drv_init(&indev_drv);
-  indev_drv.type = LV_INDEV_TYPE_POINTER;
-  indev_drv.read_cb = my_touchpad_read;
-  lv_indev_drv_register(&indev_drv);
-#ifdef TFT_BL
-  pinMode(TFT_BL, OUTPUT);
-  digitalWrite(TFT_BL, HIGH);
-#endif
-  ui_init();//开机UI界面
-
-  lv_timer_handler();
-
-
-  Serial.println( "Setup done" );
-
-}
 
 lv_obj_t* startScreen;
 lv_obj_t* startBtn;
 int gridSize = 40;
-int snakeLength = 3;
-int snakeSampleLoc[][2] = {{5, 6}, {6, 6}, {7, 6}};
-int numFruit = 1;
-int sampleFruitLoc[][2] = {{7, 3}};
-bool snakeAlive = false;
 
 void drawStartScreen() {
     // Create a new fullscreen container
@@ -262,10 +177,10 @@ void drawBoard(){
   }
 }
 
-void drawSnake(int snakeLoc[][2]) {
+void drawSnake(Point snakeLoc[]) {
   for (int i = 0; i < snakeLength; i++) {
-    int x = snakeLoc[i][0];
-    int y = snakeLoc[i][1];
+    int x = snakeLoc[i].x;
+    int y = snakeLoc[i].y;
 
     int px = x * gridSize;
     int py = y * gridSize;
@@ -274,10 +189,9 @@ void drawSnake(int snakeLoc[][2]) {
   }
 }
 
-void drawFruit(int fruitLoc[][2]) {
-  for (int i = 0; i < numFruit; i++) {
-    int gx = fruitLoc[i][0];   // grid X
-    int gy = fruitLoc[i][1];   // grid Y
+void drawFruit(Point fruitLoc[]) {
+    int gx = fruitLoc[0].x;   // grid X
+    int gy = fruitLoc[0].y;   // grid Y
 
     int px = gx * gridSize;
     int py = gy * gridSize;
@@ -290,20 +204,74 @@ void drawFruit(int fruitLoc[][2]) {
 
     int stemLen = gridSize * 0.19;
     lcd.drawLine(cx, cy - radius, cx, cy - radius - stemLen, TFT_BROWN);
-  }
 }
 
+void setup(){
+  
+  Serial.begin(115200);
+  // Serial.println("LVGL Widgets Demo");
+  Wire.begin(19, 20);
+  dht20.begin();
+  //IO口引脚
+  pinMode(38, OUTPUT);
+  digitalWrite(38, LOW);
+  
+  // Init Display
+  lcd.begin();
+  lcd.fillScreen(TFT_BLACK);
+  // lcd.setTextSize(2);
+  delay(200);
+
+  lv_init();
+
+  delay(100);
+  touch_init();
+
+  screenWidth = lcd.width();
+  screenHeight = lcd.height();
+
+  lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, screenWidth * screenHeight / 10);
+  //  lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, 480 * 272 / 10);
+  /* Initialize the display */
+  lv_disp_drv_init(&disp_drv);
+  /* Change the following line to your display resolution */
+  disp_drv.hor_res = screenWidth;
+  disp_drv.ver_res = screenHeight;
+  disp_drv.flush_cb = my_disp_flush;
+  disp_drv.draw_buf = &draw_buf;
+  lv_disp_drv_register(&disp_drv);
+
+#ifdef TFT_BL
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, HIGH);
+#endif
+  initGame();
+
+
+  updateSnake();
+  drawBoard();
+  drawSnake(snake);
+  drawFruit(&fruit);
+
+  Serial.println( "Setup done" );
+
+}
+
+unsigned long prev = 0;
 void loop()
 {
   if (!snakeAlive){
+    lv_timer_handler();
     lv_obj_clean(lv_scr_act());
     drawStartScreen();
   }
   else{
-    drawBoard();
-    drawSnake(snakeSampleLoc);
-    drawFruit(sampleFruitLoc);
+    if (millis() - prev > 1000) {
+      prev = millis();
+      updateSnake();
+      drawBoard();
+      drawSnake(snake);
+      drawFruit(&fruit);
+    }
   }
-  lv_timer_handler();
-  delay(1000);
 }
