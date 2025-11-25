@@ -1,11 +1,11 @@
 import vosk
-import pyaudio 
+import pyaudio
 import json
 import serial
 
 
 try:
-    esp = serial.Serial('/dev/tty.usbserial-1430',baudrate=115200)
+    esp = serial.Serial('COM13',baudrate=115200)
 except Exception as e:
     print(e)
 # Set the model path
@@ -27,7 +27,6 @@ stream = p.open(format=pyaudio.paInt16,
                 rate=16000,
                 input=True,
                 frames_per_buffer=1024)
-# 
 
 # Open a text file in write mode using a 'with' block
 print("Listening for speech. Say 'Terminate' to stop.")
@@ -51,4 +50,3 @@ stream.close()
 
 # Terminate the PyAudio object
 p.terminate()
-
