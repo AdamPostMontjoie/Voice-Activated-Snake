@@ -1,6 +1,9 @@
 
+#include <WiFi.h>
+#include <WebServer.h>
+#include <algorithm>
+#include <functional>
 #include <Adafruit_GFX.h>
-
 #include <LovyanGFX.hpp>
 #include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
@@ -8,6 +11,32 @@
 
 #define TFT_BL 2
 
+// WiFi and Scoreboard Configuration
+const char* ssid = "Snake"; 
+const char* pass = "cics_256"; 
+WebServer server(80);
+int scores[10] = {0};
+
+void on_home() {
+  String html = "<!DOCTYPE html><html><body>";
+  html += "<h1>High Scores</h1>";
+  html += "<ol>";
+
+  for (int i = 0; i < 10; i++) {
+    html += "<li>Score: " + String(scores[i]) + "</li>";
+  }
+  
+  html += "</ol></body></html>";
+  
+  server.send(200, "text/html", html);
+}
+
+void updateLeaderboard(int newScore) {
+  if (newScore > scores[9]) {
+    scores[9] = newScore; 
+    std::sort(scores, scores + 10, std::greater<int>());
+  }
+}
 
 class LGFX : public lgfx::LGFX_Device
 {
@@ -196,7 +225,15 @@ void drawCurrScore(int score){
 }
 
 void setup(){
-  
+  // WiFi Setup
+  WiFi.mode(WIFI_AP); 
+  WiFi.softAP(ssid, pass); 
+  server.on("/", on_home); 
+  server.on("/inline", [](){
+    server.send(200, "text/html", "<h1>Inline callback works too!</h1>");
+  });
+  server.begin();
+
   Serial.begin(115200);
   Wire.begin(19, 20);
   pinMode(38, OUTPUT);
@@ -221,6 +258,7 @@ String command = "";
 bool startScreenDrawn = false;
 void loop()
 {
+  server.handleClient(); // Handle WiFi requests
   if(Serial.available() > 0){
     command = Serial.readStringUntil('\n');
     command.trim();
@@ -228,6 +266,7 @@ void loop()
   }
   if (!snakeAlive){
     if (!startScreenDrawn){
+      updateLeaderboard(currentScore); // Update leaderboard when game ends
       startScreenDrawn = true;
       drawStartScreen();
     }
