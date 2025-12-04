@@ -1,6 +1,8 @@
-
+#include <WiFi.h>
+#include <WebServer.h>
+#include <algorithm>
+#include <functional>
 #include <Adafruit_GFX.h>
-
 #include <LovyanGFX.hpp>
 #include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
@@ -8,6 +10,32 @@
 
 #define TFT_BL 2
 
+// WiFi and Scoreboard Configuration
+const char* ssid = "Snake"; 
+const char* pass = "cics_256"; 
+WebServer server(80);
+int scores[10] = {0};
+
+void on_home() {
+  String html = "<!DOCTYPE html><html><body>";
+  html += "<h1>High Scores</h1>";
+  html += "<ol>";
+
+  for (int i = 0; i < 10; i++) {
+    html += "<li>Score: " + String(scores[i]) + "</li>";
+  }
+  
+  html += "</ol></body></html>";
+  
+  server.send(200, "text/html", html);
+}
+
+void updateLeaderboard(int newScore) {
+  if (newScore > scores[9]) {
+    scores[9] = newScore; 
+    std::sort(scores, scores + 10, std::greater<int>());
+  }
+}
 
 class LGFX : public lgfx::LGFX_Device
 {
@@ -18,30 +46,28 @@ public:
 
   LGFX(void)
   {
-
-
     {
       auto cfg = _bus_instance.config();
       cfg.panel = &_panel_instance;
       
-      cfg.pin_d0  = GPIO_NUM_8; // B0
-      cfg.pin_d1  = GPIO_NUM_3;  // B1
-      cfg.pin_d2  = GPIO_NUM_46;  // B2
-      cfg.pin_d3  = GPIO_NUM_9;  // B3
-      cfg.pin_d4  = GPIO_NUM_1;  // B4
+      cfg.pin_d0  = GPIO_NUM_8; 
+      cfg.pin_d1  = GPIO_NUM_3; 
+      cfg.pin_d2  = GPIO_NUM_46; 
+      cfg.pin_d3  = GPIO_NUM_9; 
+      cfg.pin_d4  = GPIO_NUM_1; 
       
-      cfg.pin_d5  = GPIO_NUM_5;  // G0
-      cfg.pin_d6  = GPIO_NUM_6; // G1
-      cfg.pin_d7  = GPIO_NUM_7;  // G2
-      cfg.pin_d8  = GPIO_NUM_15;  // G3
-      cfg.pin_d9  = GPIO_NUM_16; // G4
-      cfg.pin_d10 = GPIO_NUM_4;  // G5
+      cfg.pin_d5  = GPIO_NUM_5; 
+      cfg.pin_d6  = GPIO_NUM_6; 
+      cfg.pin_d7  = GPIO_NUM_7; 
+      cfg.pin_d8  = GPIO_NUM_15; 
+      cfg.pin_d9  = GPIO_NUM_16; 
+      cfg.pin_d10 = GPIO_NUM_4; 
       
-      cfg.pin_d11 = GPIO_NUM_45; // R0
-      cfg.pin_d12 = GPIO_NUM_48; // R1
-      cfg.pin_d13 = GPIO_NUM_47; // R2
-      cfg.pin_d14 = GPIO_NUM_21; // R3
-      cfg.pin_d15 = GPIO_NUM_14; // R4
+      cfg.pin_d11 = GPIO_NUM_45; 
+      cfg.pin_d12 = GPIO_NUM_48; 
+      cfg.pin_d13 = GPIO_NUM_47; 
+      cfg.pin_d14 = GPIO_NUM_21; 
+      cfg.pin_d15 = GPIO_NUM_14; 
 
       cfg.pin_henable = GPIO_NUM_40;
       cfg.pin_vsync   = GPIO_NUM_41;
@@ -145,7 +171,7 @@ void drawBoard(){
   }
 }
 
-// fake snake and fruit for start screen, wrapped around start button
+// fake snake and fruit for start screen
 Point fakeSnake[14] = {
   {12,8}, {13,8}, {14,8}, {16,8}, {17,8}, {18,8},
   {18,7}, {18,6}, {18,5}, {17,5}, {16,5}, {15,5}, {15, 8}, {14, 5}
@@ -165,21 +191,21 @@ void drawStartScreen() {
   lcd.setTextColor(TFT_WHITE);
   lcd.setTextSize(3);
   lcd.print("say 'START' to begin");
-  // draw fake snake around button
+  
   drawSnake(fakeSnake, 14);
   drawFruit(fakeFruit);
-  // draw eye on the snake head by fruit with white circle and black dot
+  
   int eyeX = fakeSnake[0].x * gridSize + gridSize / 2;
   int eyeY = fakeSnake[0].y * gridSize + gridSize / 2 - 8;
   lcd.fillCircle(eyeX-3, eyeY, 6, TFT_WHITE);
   lcd.fillCircle(eyeX-3, eyeY, 3, TFT_BLACK);
-  // draw high score in top left
+  
   lcd.setCursor(10, 10);
   lcd.setTextColor(TFT_SKYBLUE);
   lcd.setTextSize(3);
   lcd.print("High Score: ");
   lcd.print(highScore);
-  // write name of game "SPEECH SNAKE" at top center
+  
   lcd.setCursor(screenWidth / 2 - 160, 60);
   lcd.setTextColor(TFT_SKYBLUE);
   lcd.setTextSize(5);
@@ -189,7 +215,7 @@ void drawStartScreen() {
 
 void drawCurrScore(int score){
     lcd.setCursor(10, 10);
-    lcd.setTextColor(TFT_BLACK); // Black text with green
+    lcd.setTextColor(TFT_BLACK); 
     lcd.setTextSize(2);
     lcd.print("Score: ");
     lcd.print(score);
@@ -198,11 +224,20 @@ void drawCurrScore(int score){
 void setup(){
   
   Serial.begin(115200);
+  
+  // WiFi Setup
+  WiFi.mode(WIFI_AP); 
+  WiFi.softAP(ssid, pass); 
+  server.on("/", on_home); 
+  server.on("/inline", [](){
+    server.send(200, "text/html", "<h1>Inline callback works too!</h1>");
+  });
+  server.begin();
+
   Wire.begin(19, 20);
   pinMode(38, OUTPUT);
   digitalWrite(38, LOW);
   
-  // Init Display
   lcd.begin();
   lcd.fillScreen(TFT_BLACK);
 
@@ -219,15 +254,19 @@ void setup(){
 unsigned long prev = 0;
 String command = "";
 bool startScreenDrawn = false;
+
 void loop()
 {
+  server.handleClient(); // Handle WiFi requests
+
   if(Serial.available() > 0){
     command = Serial.readStringUntil('\n');
     command.trim();
-    prev-=200; // speed up response time after command received to compensate for delay
+    prev-=200; 
   }
   if (!snakeAlive){
     if (!startScreenDrawn){
+      updateLeaderboard(currentScore); // Update leaderboard when game ends
       startScreenDrawn = true;
       drawStartScreen();
     }
