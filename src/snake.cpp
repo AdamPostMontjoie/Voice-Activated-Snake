@@ -31,16 +31,16 @@ void spawnFruit() {
 }
 
 void updateDirection(const char* cmd) {
-    if (strcmp(cmd, "up") == 0 && dy != 1) {
+    if (strstr(cmd, "up") != nullptr && dy != 1) {
         dx = 0; dy = -1;
     }
-    else if (strcmp(cmd, "down") == 0 && dy != -1) {
+    else if (strstr(cmd, "down") != nullptr && dy != -1) {
         dx = 0; dy = 1;
     }
-    else if (strcmp(cmd, "left") == 0 && dx != 1) {
+    else if (strstr(cmd, "left") != nullptr && dx != 1) {
         dx = -1; dy = 0;
     }
-    else if (strcmp(cmd, "right") == 0 && dx != -1) {
+    else if (strstr(cmd, "right") != nullptr && dx != -1) {
         dx = 1; dy = 0;
     }
 }
@@ -48,7 +48,7 @@ void updateDirection(const char* cmd) {
 bool checkWallCollision() {
     return (
         snake[0].x < 0 || snake[0].x >= GRID_W-1 ||
-        snake[0].y < 0 || snake[0].y >= GRID_H-1
+        snake[0].y < 0 || snake[0].y > GRID_H-1
     );
 }
 
@@ -65,9 +65,14 @@ bool checkFruitCollision() {
     return (snake[0].x == fruit.x && snake[0].y == fruit.y);
 }
 
+bool incrementLength = false;
 void updateSnake() {
     if (!snakeAlive) return;
     //shift the body positions
+    if (incrementLength) {
+        incrementLength = false;
+        snakeLength++;
+    }
     for (int i = snakeLength - 1; i > 0; i--) {
         snake[i] = snake[i - 1];
     }
@@ -81,7 +86,7 @@ void updateSnake() {
         return;
     }
     if (checkFruitCollision()) {
-        snakeLength++;
+        incrementLength = true;
         spawnFruit();
     }
 }

@@ -1,16 +1,42 @@
-#include <lvgl.h>
-#include <DHT20.h>
-#include <SPI.h>
-#include <Adafruit_GFX.h>
 
+#include <WiFi.h>
+#include <WebServer.h>
+#include <algorithm>
+#include <functional>
+#include <Adafruit_GFX.h>
 #include <LovyanGFX.hpp>
 #include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
-#include "ui.h"
 #include "snake_logic.h"
 
 #define TFT_BL 2
 
+// WiFi and Scoreboard Configuration
+const char* ssid = "Snake"; 
+const char* pass = "cics_256"; 
+WebServer server(80);
+int scores[10] = {0};
+
+void on_home() {
+  String html = "<!DOCTYPE html><html><body>";
+  html += "<h1>High Scores</h1>";
+  html += "<ol>";
+
+  for (int i = 0; i < 10; i++) {
+    html += "<li>Score: " + String(scores[i]) + "</li>";
+  }
+  
+  html += "</ol></body></html>";
+  
+  server.send(200, "text/html", html);
+}
+
+void updateLeaderboard(int newScore) {
+  if (newScore > scores[9]) {
+    scores[9] = newScore; 
+    std::sort(scores, scores + 10, std::greater<int>());
+  }
+}
 
 class LGFX : public lgfx::LGFX_Device
 {
@@ -90,94 +116,18 @@ LGFX lcd;
 //UI
 
 int led;
-DHT20 dht20;
 SPIClass& spi = SPI;
-
-
-/*******************************************************************************
-   Please config the touch panel in touch.h
- ******************************************************************************/
-#include "touch.h"
 
 
 /* Change to your screen resolution */
 static uint32_t screenWidth;
 static uint32_t screenHeight;
-static lv_disp_draw_buf_t draw_buf;
-static lv_color_t disp_draw_buf[800 * 480 / 10];
-//static lv_color_t disp_draw_buf;
-static lv_disp_drv_t disp_drv;
 
-/* Display flushing */
-void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
-{
-
-  uint32_t w = (area->x2 - area->x1 + 1);
-  uint32_t h = (area->y2 - area->y1 + 1);
-  
-
-  //lcd.fillScreen(TFT_WHITE);
-#if (LV_COLOR_16_SWAP != 0)
-  lcd.pushImageDMA(area->x1, area->y1, w, h,(lgfx::rgb565_t*)&color_p->full);
-#else
-  lcd.pushImageDMA(area->x1, area->y1, w, h,(lgfx::rgb565_t*)&color_p->full);//
-#endif
-
-  lv_disp_flush_ready(disp);
-
-}
-
-
-
-lv_obj_t* startScreen;
-lv_obj_t* startBtn;
 int gridSize = 40;
+int highScore = 0;
+int currentScore = 0;
 
-void drawStartScreen() {
-    // Create a new fullscreen container
-    startScreen = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(startScreen, LV_HOR_RES, LV_VER_RES);
-    lv_obj_set_style_bg_color(startScreen, lv_color_hex(0x0000FF), LV_PART_MAIN);  // blue
-    lv_obj_set_style_bg_opa(startScreen, LV_OPA_COVER, LV_PART_MAIN);
-
-    // Title label
-    lv_obj_t* title = lv_label_create(startScreen);
-    lv_label_set_text(title, "SPEECH SNAKE");
-    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);   // white text
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 40);  // center, offset down
-
-    // Start button
-    startBtn = lv_btn_create(startScreen);
-    lv_obj_set_size(startBtn, 150, 50);
-    lv_obj_align(startBtn, LV_ALIGN_CENTER, 0, 40);
-
-
-    // Button text
-    lv_obj_t* btnLabel = lv_label_create(startBtn);
-    lv_label_set_text(btnLabel, "START GAME");
-    lv_obj_center(btnLabel);
-}
-
-void drawBoard(){
-  lcd.fillScreen(TFT_GREENYELLOW);
-  for(int i = 1; i <= 24; i++){
-    for(int j = 1; j <= 12; j++){
-      if (i%2 == 0){
-        if(j%2 != 0){
-          lcd.fillRect(gridSize*i - gridSize, gridSize*j-gridSize, gridSize, gridSize, TFT_GREEN);
-        }
-      }
-      else{
-        if(j%2 == 0){
-          lcd.fillRect(gridSize*i - gridSize, gridSize*j-gridSize, gridSize, gridSize, TFT_GREEN);
-        }
-      }
-    }
-  }
-}
-
-void drawSnake(Point snakeLoc[]) {
+void drawSnake(Point snakeLoc[], int snakeLength) {
   for (int i = 0; i < snakeLength; i++) {
     int x = snakeLoc[i].x;
     int y = snakeLoc[i].y;
@@ -206,72 +156,144 @@ void drawFruit(Point fruitLoc[]) {
     lcd.drawLine(cx, cy - radius, cx, cy - radius - stemLen, TFT_BROWN);
 }
 
+void drawBoard(){
+  lcd.fillScreen(TFT_GREENYELLOW);
+  for(int i = 1; i <= 24; i++){
+    for(int j = 1; j <= 12; j++){
+      if (i%2 == 0){
+        if(j%2 != 0){
+          lcd.fillRect(gridSize*i - gridSize, gridSize*j-gridSize, gridSize, gridSize, TFT_GREEN);
+        }
+      }
+      else{
+        if(j%2 == 0){
+          lcd.fillRect(gridSize*i - gridSize, gridSize*j-gridSize, gridSize, gridSize, TFT_GREEN);
+        }
+      }
+    }
+  }
+}
+
+// fake snake and fruit for start screen, wrapped around start button
+Point fakeSnake[14] = {
+  {12,8}, {13,8}, {14,8}, {16,8}, {17,8}, {18,8},
+  {18,7}, {18,6}, {18,5}, {17,5}, {16,5}, {15,5}, {15, 8}, {14, 5}
+};
+Point fakeFruit[1] = {
+  {11,8}
+};
+
+void drawStartScreen() {
+  drawBoard();
+  int buttonWidth = 400;
+  int buttonHeight = 40;
+  int buttonX = (screenWidth - buttonWidth) / 2;
+  int buttonY = (screenHeight - buttonHeight) / 2 + 20;
+  lcd.fillRect(buttonX, buttonY, buttonWidth, buttonHeight, TFT_SKYBLUE);
+  lcd.setCursor(buttonX + 10, buttonY + 10);
+  lcd.setTextColor(TFT_WHITE);
+  lcd.setTextSize(3);
+  lcd.print("say 'START' to begin");
+  // draw fake snake around button
+  drawSnake(fakeSnake, 14);
+  drawFruit(fakeFruit);
+  // draw eye on the snake head by fruit with white circle and black dot
+  int eyeX = fakeSnake[0].x * gridSize + gridSize / 2;
+  int eyeY = fakeSnake[0].y * gridSize + gridSize / 2 - 8;
+  lcd.fillCircle(eyeX-3, eyeY, 6, TFT_WHITE);
+  lcd.fillCircle(eyeX-3, eyeY, 3, TFT_BLACK);
+  // draw high score in top left
+  lcd.setCursor(10, 10);
+  lcd.setTextColor(TFT_SKYBLUE);
+  lcd.setTextSize(3);
+  lcd.print("High Score: ");
+  lcd.print(highScore);
+  // write name of game "SPEECH SNAKE" at top center
+  lcd.setCursor(screenWidth / 2 - 160, 60);
+  lcd.setTextColor(TFT_SKYBLUE);
+  lcd.setTextSize(5);
+  lcd.print("SPEECH SNAKE");
+}
+
+
+void drawCurrScore(int score){
+    lcd.setCursor(10, 10);
+    lcd.setTextColor(TFT_BLACK); // Black text with green
+    lcd.setTextSize(2);
+    lcd.print("Score: ");
+    lcd.print(score);
+}
+
 void setup(){
-  
+  // WiFi Setup
+  WiFi.mode(WIFI_AP); 
+  WiFi.softAP(ssid, pass); 
+  server.on("/", on_home); 
+  server.on("/inline", [](){
+    server.send(200, "text/html", "<h1>Inline callback works too!</h1>");
+  });
+  server.begin();
+
   Serial.begin(115200);
-  // Serial.println("LVGL Widgets Demo");
   Wire.begin(19, 20);
-  dht20.begin();
-  //IO口引脚
   pinMode(38, OUTPUT);
   digitalWrite(38, LOW);
   
   // Init Display
   lcd.begin();
   lcd.fillScreen(TFT_BLACK);
-  // lcd.setTextSize(2);
-  delay(200);
-
-  lv_init();
-
-  delay(100);
-  touch_init();
 
   screenWidth = lcd.width();
   screenHeight = lcd.height();
-
-  lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, screenWidth * screenHeight / 10);
-  //  lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, 480 * 272 / 10);
-  /* Initialize the display */
-  lv_disp_drv_init(&disp_drv);
-  /* Change the following line to your display resolution */
-  disp_drv.hor_res = screenWidth;
-  disp_drv.ver_res = screenHeight;
-  disp_drv.flush_cb = my_disp_flush;
-  disp_drv.draw_buf = &draw_buf;
-  lv_disp_drv_register(&disp_drv);
 
 #ifdef TFT_BL
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
 #endif
-  initGame();
-
-
-  updateSnake();
-  drawBoard();
-  drawSnake(snake);
-  drawFruit(&fruit);
-
-  Serial.println( "Setup done" );
 
 }
 
 unsigned long prev = 0;
+String command = "";
+bool startScreenDrawn = false;
 void loop()
 {
+  server.handleClient(); // Handle WiFi requests
+  if(Serial.available() > 0){
+    command = Serial.readStringUntil('\n');
+    command.trim();
+    prev-=200; // speed up response time after command received to compensate for delay
+  }
   if (!snakeAlive){
-    lv_timer_handler();
-    lv_obj_clean(lv_scr_act());
-    drawStartScreen();
+    if (!startScreenDrawn){
+      updateLeaderboard(currentScore); // Update leaderboard when game ends
+      startScreenDrawn = true;
+      drawStartScreen();
+    }
+    if (command == "start"){
+      startScreenDrawn = false;
+      snakeAlive = true;
+      currentScore = 0;
+      initGame();
+      drawBoard();
+      drawSnake(snake, snakeLength);
+      drawFruit(&fruit);
+      command = "";
+    }
   }
   else{
     if (millis() - prev > 1000) {
       prev = millis();
+      updateDirection(command.c_str());
       updateSnake();
-      drawBoard();
-      drawSnake(snake);
-      drawFruit(&fruit);
+      if (snakeAlive){
+        drawBoard();
+        drawSnake(snake, snakeLength);
+        drawFruit(&fruit);
+        highScore = max(highScore, snakeLength - 3);
+        currentScore = snakeLength - 3;
+        drawCurrScore(currentScore);
+      }
     }
   }
 }
